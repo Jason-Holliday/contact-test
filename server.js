@@ -16,18 +16,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Nodemailer Transporter
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
-// POST /api/contact
+// API Route
 app.post("/api/contact", async (req, res) => {
   const { name, email, message } = req.body;
 
@@ -39,6 +28,16 @@ app.post("/api/contact", async (req, res) => {
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: "Ungültige E-Mail-Adresse." });
   }
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
 
   try {
     await transporter.sendMail({
@@ -62,11 +61,16 @@ app.post("/api/contact", async (req, res) => {
   }
 });
 
-// React Frontend ausliefern (nach npm run build)
+// React Frontend
 app.use(express.static(path.join(__dirname, "dist")));
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
+// Fallback für React Router
+app.use((req, res, next) => {
+  if (req.method === "GET" && !req.path.startsWith("/api")) {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
+  } else {
+    next();
+  }
 });
 
 app.listen(PORT, () => {
