@@ -1,115 +1,78 @@
-import { useState } from "react";
+import express from "express";
+import cors from "cors";
+import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const initialState = { name: "", email: "", message: "" };
+dotenv.config();
 
-export default function App() {
-  const [form, setForm] = useState(initialState);
-  const [status, setStatus] = useState(null); // "success" | "error" | "loading"
-  const [errorMsg, setErrorMsg] = useState("");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setStatus("loading");
-    setErrorMsg("");
+app.use(cors());
+app.use(express.json());
 
-    try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+// API Route
+app.post("/api/contact", async (req, res) => {
+  const { name, email, message } = req.body;
 
-      const data = await res.json();
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: "Alle Felder sind erforderlich." });
+  }
 
-      if (!res.ok) throw new Error(data.error || "Fehler beim Senden.");
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Ungültige E-Mail-Adresse." });
+  }
 
-      setStatus("success");
-      setForm(initialState);
-    } catch (err) {
-      setStatus("error");
-      setErrorMsg(err.message || "Etwas ist schiefgelaufen.");
-    }
-  };
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg p-8">
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Kontakt</h1>
-        <p className="text-gray-500 mb-6 text-sm">
-          Schreib mir eine Nachricht — ich melde mich so schnell wie möglich.
-        </p>
+  try {
+    await transporter.sendMail({
+      from: `"${name}" <${process.env.SMTP_USER}>`,
+      to: process.env.MAIL_TO,
+      replyTo: email,
+      subject: `Neue Nachricht von ${name}`,
+      html: `
+        <h2>Neue Kontaktanfrage</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>E-Mail:</strong> ${email}</p>
+        <p><strong>Nachricht:</strong></p>
+        <p>${message.replace(/\n/g, "<br>")}</p>
+      `,
+    });
 
-        {status === "success" && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            ✅ Nachricht erfolgreich gesendet!
-          </div>
-        )}
+    res.status(200).json({ success: true, message: "E-Mail erfolgreich gesendet." });
+  } catch (error) {
+    console.error("Mail-Fehler:", error);
+    res.status(500).json({ error: "E-Mail konnte nicht gesendet werden." });
+  }
+});
 
-        {status === "error" && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            ❌ {errorMsg}
-          </div>
-        )}
+// React Frontend
+app.use(express.static(path.join(__dirname, "dist")));
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Name
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              placeholder="Max Mustermann"
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-            />
-          </div>
+// Fallback für React Router
+app.use((req, res, next) => {
+  if (req.method === "GET" && !req.path.startsWith("/api")) {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
+  } else {
+    next();
+  }
+});
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              E-Mail
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={form.email}
-              onChange={handleChange}
-              required
-              placeholder="max@example.de"
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nachricht
-            </label>
-            <textarea
-              name="message"
-              value={form.message}
-              onChange={handleChange}
-              required
-              rows={5}
-              placeholder="Deine Nachricht..."
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={status === "loading"}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm"
-          >
-            {status === "loading" ? "Wird gesendet..." : "Nachricht senden"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
+app.listen(PORT, () => {
+  console.log(`Server läuft auf http://localhost:${PORT}`);
+});
